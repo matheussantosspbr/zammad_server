@@ -26,7 +26,7 @@ export interface ZammadArticleAttachment {
 	store_file_id: number
 	filename: string
 	size: string
-	preferences: { "Content-Type"?: string; [key: string]: unknown }
+	preferences: { "Content-Type"?: string; "Mime-Type"?: string; [key: string]: unknown }
 }
 
 export interface ZammadArticle {
@@ -46,6 +46,18 @@ export interface ZammadAttachmentFile {
 	buffer: Buffer
 	contentType: string
 	filename: string
+}
+
+export interface CreateTicketArticleAttachment {
+	filename: string
+	data: string
+	"mime-type": string
+}
+
+export interface CreateTicketArticleInput {
+	ticketId: number
+	body: string
+	attachments?: CreateTicketArticleAttachment[]
 }
 
 const USERS_PER_PAGE = 100
@@ -165,16 +177,29 @@ export default class Zammad {
 	}
 
 	async getTicket(ticketId: number): Promise<ZammadTicket> {
-		const response = await fetch(
-			`${env.ZAMMAD_BASE_URL}/api/v1/tickets/${ticketId}?expand=true`,
-			{ headers: this.headers },
-		)
+		// Logo após um escrita no ticket (criar/apagar artigo, mudar status), o endpoint
+		// com `expand=true` responde 400 por alguns instantes (observado em teste real) até o
+		// Zammad terminar de recalcular o ticket. Poucas tentativas com espera resolvem.
+		const retryDelaysMs = [400, 800, 1500]
 
-		if (!response.ok) {
-			throw new Error(`Zammad respondeu ${response.status} ao buscar o ticket ${ticketId}`)
+		for (let attempt = 0; ; attempt++) {
+			const response = await fetch(
+				`${env.ZAMMAD_BASE_URL}/api/v1/tickets/${ticketId}?expand=true`,
+				{ headers: this.headers },
+			)
+
+			if (response.ok) {
+				return (await response.json()) as ZammadTicket
+			}
+
+			if (attempt >= retryDelaysMs.length) {
+				throw new Error(
+					`Zammad respondeu ${response.status} ao buscar o ticket ${ticketId}`,
+				)
+			}
+
+			await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]))
 		}
-
-		return (await response.json()) as ZammadTicket
 	}
 
 	async updateTicketStatus(ticketId: number, state: string): Promise<void> {
@@ -186,6 +211,56 @@ export default class Zammad {
 
 		if (!response.ok) {
 			throw new Error(`Zammad respondeu ${response.status} ao atualizar o ticket ${ticketId}`)
+		}
+	}
+
+	async createTicketArticle(input: CreateTicketArticleInput): Promise<ZammadArticle> {
+		const response = await fetch(`${env.ZAMMAD_BASE_URL}/api/v1/ticket_articles`, {
+			method: "POST",
+			headers: { ...this.headers, "Content-Type": "application/json" },
+			body: JSON.stringify({
+				ticket_id: input.ticketId,
+				body: input.body,
+				content_type: "text/plain",
+				type: "web",
+				internal: true,
+				sender: "Agent",
+				...(input.attachments?.length ? { attachments: input.attachments } : {}),
+			}),
+		})
+
+		if (!response.ok) {
+			throw new Error(
+				`Zammad respondeu ${response.status} ao criar mensagem no ticket ${input.ticketId}`,
+			)
+		}
+
+		return (await response.json()) as ZammadArticle
+	}
+
+	async deleteTicketArticle(articleId: number): Promise<void> {
+		// Mesma instabilidade transitória observada em getTicket: uma escrita recente no
+		// ticket (ex: criar o próprio artigo pouco antes) pode fazer essa chamada 400 por
+		// alguns instantes. Poucas tentativas com espera resolvem.
+		const retryDelaysMs = [400, 800, 1500]
+
+		for (let attempt = 0; ; attempt++) {
+			const response = await fetch(
+				`${env.ZAMMAD_BASE_URL}/api/v1/ticket_articles/${articleId}`,
+				{ method: "DELETE", headers: this.headers },
+			)
+
+			if (response.ok) {
+				return
+			}
+
+			if (attempt >= retryDelaysMs.length) {
+				throw new Error(
+					`Zammad respondeu ${response.status} ao apagar a mensagem ${articleId}`,
+				)
+			}
+
+			await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]))
 		}
 	}
 }

@@ -1,7 +1,14 @@
+export interface HttpRequestFile {
+	filename: string
+	mimeType: string
+	buffer: Buffer
+}
+
 export interface HttpRequest {
 	params?: Record<string, string>
 	body?: unknown
 	userId?: string
+	files?: HttpRequestFile[]
 }
 
 export interface HttpResponse<T = unknown> {

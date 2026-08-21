@@ -17,7 +17,10 @@ export function toTicketMessage(article: ZammadArticle, ticketId: number): Ticke
 		attachments: article.attachments.map((attachment) => ({
 			id: String(attachment.id),
 			filename: attachment.filename,
-			contentType: attachment.preferences["Content-Type"] ?? "application/octet-stream",
+			contentType:
+				attachment.preferences["Content-Type"] ??
+				attachment.preferences["Mime-Type"] ??
+				"application/octet-stream",
 			url: `/tickets/${ticketId}/articles/${article.id}/attachments/${attachment.id}`,
 		})),
 	}

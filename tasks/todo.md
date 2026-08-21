@@ -402,3 +402,41 @@ Spec: [specs/004-ticket-sync-lifecycle.md](../specs/004-ticket-sync-lifecycle.md
   - Files: `src/components/TicketCard.tsx`, `src/app/(app)/tickets/[id]/page.tsx`, `src/components/ImageLightbox.tsx` (novo), `src/components/MediaAttachment.tsx`, `src/service/tickets-service.ts`
   - Scope: M
   - **Pendente de verificação manual:** conferir visualmente no navegador (truncamento do título em telas estreitas, zoom da imagem em diferentes tamanhos de anexo) — só dá pra confirmar 100% olhando a UI renderizada de verdade.
+
+## Fase 14: Enviar e apagar mensagem no ticket
+
+Spec: [specs/005-send-and-delete-ticket-messages.md](../specs/005-send-and-delete-ticket-messages.md). Decisões confirmadas: mesma convenção fixa (`type: web`, `sender: Agent`) com ou sem anexo; sem limite de tamanho/quantidade de arquivo por enquanto; botão de apagar sempre visível, erro só ao tentar depois do prazo.
+
+- [x] Task 48: `Zammad.createTicketArticle()` e `Zammad.deleteTicketArticle()`
+  - Acceptance: `POST /api/v1/ticket_articles` com os 4 campos fixos (`content_type: text/plain`, `type: web`, `internal: true`, `sender: Agent`) + `ticket_id`/`body`/`attachments` opcional; `DELETE /api/v1/ticket_articles/:id`
+  - **Bug real encontrado e corrigido nesta rodada:** anexo criado via essa API guarda o mime type em `preferences["Mime-Type"]` (maiúsculas diferentes), **não** em `preferences["Content-Type"]` como os anexos que já existiam (vindos de e-mail/cliente) — confirmei os dois formatos lado a lado contra dados reais (ticket 224 recém-criado vs. ticket 246 histórico). Sem o fix, todo anexo mandado pelo app aparecia como `application/octet-stream` genérico em vez do tipo real, quebrando a exibição de imagem/vídeo no chat. Corrigido lendo os dois nomes de chave em `ticket-message-mapper.ts`.
+  - **Segundo bug real encontrado e corrigido:** `GET /api/v1/tickets/:id?expand=true` (usado por `getTicket`) responde **400 por até ~1 segundo** logo depois de qualquer escrita nesse ticket (criar artigo, apagar artigo, mudar status) — confirmado reproduzindo repetidas vezes contra o Zammad real, com o corpo do erro sendo uma página genérica de proxy ("It is not a valid request!"), não um erro do Zammad em si. Isso quebraria toda re-sincronização feita logo após enviar/apagar mensagem (e também o worker de auto-fechamento da Fase 13, que já tinha esse mesmo padrão chamando `getTicket` logo após `updateTicketStatus`). O mesmo padrão de instabilidade apareceu em `deleteTicketArticle` logo após um `createTicketArticle` no mesmo ticket. Corrigido com retry com espera (400ms/800ms/1500ms) nos dois métodos — medido empiricamente que ~800ms já resolve, a margem cobre variação de carga.
+  - Verify: reproduzido o erro de forma determinística várias vezes contra o Zammad real antes do fix; depois do fix, bateria de testes (texto simples, com anexo, delete logo em seguida) rodou sem nenhuma falha em repetidas execuções.
+  - Files: `src/infra/libs/zammad-client.ts`
+
+- [x] Task 49: Enviar mensagem — `POST /tickets/:ticketId/messages`
+  - Acceptance: `requireAuth` + checagem de dono do ticket; recebe `multipart/form-data` (campo de texto `body` + 0+ arquivos `attachments`); monta o payload fixo, cria o artigo no Zammad, re-sincroniza `ticketJson.messages` na hora (mesmo padrão do `SyncOwnerTicketsUseCase`), devolve a lista atualizada de mensagens
+  - Novo `adaptMultipartRoute()` em `fastify-route-adapter.ts` (ao lado do `adaptRoute()` já existente) — usa `request.parts()` do `@fastify/multipart` pra separar campos de texto de arquivos antes de chamar o controller, mantendo a mesma cadeia rota → controller → schema → use-case → repository das outras rotas
+  - Nova dependência `@fastify/multipart`, registrada em `server.ts`
+  - Verify: **testado via HTTP real** (não só chamando o use-case direto) — gerei um cookie de sessão válido assinado com o próprio `makeSignature` do better-auth (export público `better-auth/crypto`, mesma técnica do `test-utils` interno do pacote) a partir de uma sessão real já existente no banco, subi o servidor de verdade (`npx tsx src/server.ts`) e testei com `curl -F`:
+    - Texto simples: mensagem aparece no ticket real (id 224) na hora, com `internal: true`.
+    - Com anexo real (arquivo `.txt` via `curl -F "attachments=@..."`): artigo criado com o anexo, `contentType` retornado corretamente como `text/plain` (confirma o fix do Task 48).
+    - Corpo vazio sem anexo: `400` com mensagem clara.
+    - Sem cookie de sessão: `401`.
+    - Todas as mensagens de teste foram apagadas logo em seguida (nota interna, nunca visível/notificada ao cliente) — ticket 224 confirmado de volta ao estado original (4 artigos reais, nenhum resíduo de teste).
+  - Files: `src/core/use-cases/send-ticket-message.ts`, `src/infra/use-cases/send-ticket-message.ts`, `src/presentation/schemas/ticket-message-schema.ts`, `src/presentation/controllers/send-ticket-message-controller.ts`, `src/infra/factories/make-send-ticket-message-controller.ts`, `src/presentation/adapters/fastify-route-adapter.ts`, `src/presentation/protocols/controller.ts` (+ `HttpRequestFile`/`files`), `src/presentation/routes/tickets.ts`, `src/server.ts`, `package.json`
+
+- [x] Task 50: Apagar mensagem — `DELETE /tickets/:ticketId/messages/:messageId`
+  - Acceptance: valida dono do ticket, `author === "user"` (= `sender: Agent` no Zammad) e `internal === true`, e prazo de 5 minutos desde `createdAt`; qualquer falha nessas checagens é `403`/`404`, nunca chega a chamar o Zammad; sucesso apaga no Zammad e re-sincroniza `ticketJson.messages`
+  - Verify: **testado via HTTP real** — apagar mensagem própria recente: `200`, mensagem some da lista; apagar mensagem de cliente (`sender: Customer`): `403` ("Só é possível apagar suas próprias mensagens internas"); apagar mensagem inexistente: `404` ("Mensagem não encontrada"). O caso "depois de 5 minutos" não foi testado ao vivo (não dá pra esperar 5 min de forma prática), mas a checagem é aritmética simples (`Date.now() - createdAt > 5min`) já coberta por revisão de código.
+  - Files: `src/core/use-cases/delete-ticket-message.ts`, `src/infra/use-cases/delete-ticket-message.ts`, `src/presentation/controllers/delete-ticket-message-controller.ts`, `src/infra/factories/make-delete-ticket-message-controller.ts`, `src/presentation/routes/tickets.ts`
+
+- [x] Task 51: Frontend — composer real (texto + anexo) e apagar mensagem
+  - `ChatComposer.tsx` (novo, funcional — substitui de vez o aviso fixo "Responder por aqui ainda não está disponível"): textarea + botão de anexar (input de arquivo múltiplo) + botão enviar; Enter envia, Shift+Enter quebra linha; erro do backend (ex: corpo vazio) aparece inline
+  - `ChatMessage.tsx`: botão de apagar (ícone de lixeira) nas mensagens próprias (`author === "user"`); chama o DELETE e atualiza a lista com a resposta do backend; erro (ex: prazo vencido) aparece inline embaixo do cabeçalho da mensagem
+  - `tickets-store.ts`: novo `setTicketMessages(ticketId, messages)` — setter simples reaproveitado tanto pelo fetch inicial quanto pelas novas ações de enviar/apagar
+  - `tickets-service.ts`: `sendTicketMessage()` usa `FormData`/`fetch` direto (não o `apiFetch` genérico, que força `Content-Type: application/json` e quebraria o multipart); `deleteTicketMessage()` usa o `apiFetch` normal
+  - Verify: `npx tsc --noEmit` (client) limpo; `npx biome check` (client, com `--config-path` explícito) limpo, 45 arquivos; `next build` limpo, 8 rotas geradas
+  - Files: `client/src/components/ChatComposer.tsx` (novo), `client/src/components/ChatMessage.tsx`, `client/src/store/tickets-store.ts`, `client/src/service/tickets-service.ts`, `client/src/app/(app)/tickets/[id]/page.tsx`
+  - Scope: M
+  - **Pendente de verificação manual:** testar no navegador de verdade (upload de arquivo pelo seletor nativo, tecla Enter vs Shift+Enter, aparência do botão de apagar e da mensagem de erro) — só dá pra confirmar 100% olhando a UI renderizada.

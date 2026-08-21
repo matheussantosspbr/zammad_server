@@ -1,3 +1,4 @@
+import fastifyMultipart from "@fastify/multipart"
 import Fastify from "fastify"
 import {
 	serializerCompiler,
@@ -15,6 +16,7 @@ app.setValidatorCompiler(validatorCompiler)
 app.setSerializerCompiler(serializerCompiler)
 
 app.register(corsHandle)
+app.register(fastifyMultipart, { attachFieldsToBody: false })
 app.register(routes)
 app.register(errorHandler)
 

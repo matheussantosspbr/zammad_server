@@ -1,11 +1,13 @@
 import type { FastifyInstance, FastifyPluginOptions } from "fastify"
 import { env } from "#env"
+import { makeDeleteTicketMessageController } from "../../infra/factories/make-delete-ticket-message-controller.js"
 import { makeGetMyTicketStatsController } from "../../infra/factories/make-get-my-ticket-stats-controller.js"
 import { makeListMyTicketsController } from "../../infra/factories/make-list-my-tickets-controller.js"
 import { makeListTicketMessagesController } from "../../infra/factories/make-list-ticket-messages-controller.js"
+import { makeSendTicketMessageController } from "../../infra/factories/make-send-ticket-message-controller.js"
 import Zammad from "../../infra/libs/zammad-client.js"
 import { PrismaTicketRepository } from "../../infra/repositories/prisma-ticket-repository.js"
-import { adaptRoute } from "../adapters/fastify-route-adapter.js"
+import { adaptMultipartRoute, adaptRoute } from "../adapters/fastify-route-adapter.js"
 import { requireAuth } from "../middlewares/require-auth.js"
 
 export default async function ticketsRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
@@ -21,6 +23,18 @@ export default async function ticketsRoutes(app: FastifyInstance, _opts: Fastify
 		"/tickets/:ticketId/messages",
 		{ preHandler: requireAuth },
 		adaptRoute(makeListTicketMessagesController()),
+	)
+
+	app.post(
+		"/tickets/:ticketId/messages",
+		{ preHandler: requireAuth },
+		adaptMultipartRoute(makeSendTicketMessageController()),
+	)
+
+	app.delete(
+		"/tickets/:ticketId/messages/:messageId",
+		{ preHandler: requireAuth },
+		adaptRoute(makeDeleteTicketMessageController()),
 	)
 
 	app.get<{ Params: { ticketId: string; articleId: string; attachmentId: string } }>(
