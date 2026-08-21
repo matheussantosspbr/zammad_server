@@ -163,4 +163,29 @@ export default class Zammad {
 			filename: rawFilename ? decodeURIComponent(rawFilename) : `attachment-${attachmentId}`,
 		}
 	}
+
+	async getTicket(ticketId: number): Promise<ZammadTicket> {
+		const response = await fetch(
+			`${env.ZAMMAD_BASE_URL}/api/v1/tickets/${ticketId}?expand=true`,
+			{ headers: this.headers },
+		)
+
+		if (!response.ok) {
+			throw new Error(`Zammad respondeu ${response.status} ao buscar o ticket ${ticketId}`)
+		}
+
+		return (await response.json()) as ZammadTicket
+	}
+
+	async updateTicketStatus(ticketId: number, state: string): Promise<void> {
+		const response = await fetch(`${env.ZAMMAD_BASE_URL}/api/v1/tickets/${ticketId}`, {
+			method: "PUT",
+			headers: { ...this.headers, "Content-Type": "application/json" },
+			body: JSON.stringify({ state }),
+		})
+
+		if (!response.ok) {
+			throw new Error(`Zammad respondeu ${response.status} ao atualizar o ticket ${ticketId}`)
+		}
+	}
 }

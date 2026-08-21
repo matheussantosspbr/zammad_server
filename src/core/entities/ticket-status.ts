@@ -14,3 +14,8 @@ export function toFrontendTicketStatus(status: TicketStatus): FrontendTicketStat
 			return "CLOSED"
 	}
 }
+
+/** Converte o `state` cru do Zammad (com espaço) pro enum do Prisma (com `_`). */
+export function toPrismaTicketStatus(zammadState: string): TicketStatus {
+	return zammadState.replace(/ /g, "_") as TicketStatus
+}

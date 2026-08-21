@@ -24,4 +24,12 @@ export class PrismaTicketRepository implements ITicketRepository {
 	async findByTicketId(ticketId: number): Promise<Tickets | null> {
 		return prisma.tickets.findUnique({ where: { ticketId } })
 	}
+
+	async findAll(): Promise<Tickets[]> {
+		return prisma.tickets.findMany()
+	}
+
+	async deleteByTicketId(ticketId: number): Promise<void> {
+		await prisma.tickets.delete({ where: { ticketId } })
+	}
 }

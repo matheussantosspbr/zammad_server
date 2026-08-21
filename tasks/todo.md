@@ -354,3 +354,51 @@ Escopo confirmado com você: só dashboard + lista de tickets agora. Tela de det
 Os anexos usam `<img src>`/`<video src>` direto pro backend, autenticados só pelo cookie de sessão do Better Auth (`SameSite=Lax`). Isso funciona em dev porque `localhost:3001` e `localhost:3333` contam como "mesmo site" (browsers ignoram a porta pra isso). **Mas se front e back ficarem em domínios diferentes de verdade em produção** (ex: Vercel + Railway, que foi o plano discutido), `SameSite=Lax` **não envia o cookie** nessas requisições — as imagens dos tickets (e possivelmente outras chamadas autenticadas) vão falhar com 401. Isso não é exclusivo dos anexos: **qualquer chamada autenticada cross-domain tem esse mesmo risco**, incluindo as que já existem (`/tickets`, `/me/integrations`, etc.) — só não apareceu ainda porque nunca testamos com domínios de verdade diferentes.
 - **Fix padrão:** configurar o cookie de sessão do Better Auth com `SameSite=None; Secure` (exige HTTPS, que Vercel/Railway já dão de graça) em vez do `Lax` padrão.
 - Não apliquei essa mudança agora porque é uma configuração de segurança que afeta o app inteiro, não só os anexos — prefiro seu aval antes de mexer nisso.
+
+## Fase 13: Mensagens persistidas, cron de 30min e auto-fechamento
+
+Spec: [specs/004-ticket-sync-lifecycle.md](../specs/004-ticket-sync-lifecycle.md). Decisões confirmadas: 1 semana conta da minha última resposta; ticket estacionado some da lista até resolver; volume atual não precisa de otimização em lote.
+
+- [x] Task 41: `Zammad.getTicket(id)` e `Zammad.updateTicketStatus(id, state)`
+  - **Bug real encontrado e corrigido nesta rodada de testes:** `getTicket()` não passava `?expand=true`, então o Zammad devolvia `state_id` (número) em vez de `state` (string legível) — diferente de `searchTicketsByOwner`, que já usava `expand=true`. Isso faria `toPrismaTicketStatus(freshTicket.state)` quebrar com `TypeError` em **100% das execuções** do cron e do worker de auto-fechamento (ambos chamam `getTicket`), só não foi pego antes porque nenhum teste tinha chamado esse método sozinho ainda. Corrigido adicionando `?expand=true` na URL, igual ao outro método.
+  - Verify: script descartável rodou `getTicket` + `getTicketArticles` contra os 12 tickets reais do banco depois do fix — nenhum erro, `state` presente em todos.
+  - Files: `src/infra/libs/zammad-client.ts`
+
+- [x] Task 42: `SyncOwnerTicketsUseCase` passa a buscar e salvar mensagens em `ticketJson.messages`
+  - Verify: rodado contra o Zammad e o banco reais — 9 mensagens do ticket 246 salvas dentro de `ticketJson.messages` e lidas de volta corretamente.
+  - Files: `src/infra/use-cases/sync-owner-tickets.ts`, `src/infra/libs/ticket-message-mapper.ts` (extraído para reuso), `src/core/entities/ticket-status.ts` (`toPrismaTicketStatus`)
+
+- [x] Task 43: `ListTicketMessagesUseCase` lê do banco em vez do Zammad ao vivo
+  - Verify: `GET /tickets/:id/messages` testado de novo — 200, 9 mensagens, confirmado que não faz mais nenhuma chamada ao Zammad em tempo real (só lê `ticketJson.messages` do Postgres).
+  - Files: `src/infra/use-cases/list-ticket-messages.ts`
+
+- [x] Task 44: Fila + worker do auto-fechamento (`auto-close-ticket-queue`/`worker`)
+  - Acceptance: job com `delay: 7 dias` e `jobId` determinístico (`auto-close-<ticketId>`, evita duplicar o mesmo ticket na fila); worker chama `CloseStaleTicketUseCase` (`PUT /api/v1/tickets/:id` com `{state: "closed"}`, depois re-busca o ticket fresco e volta a salvar no banco como `CLOSED` — não desaparece pra sempre, reaparece já fechado)
+  - Files: `src/infra/queues/auto-close-ticket-queue.ts`, `src/infra/use-cases/close-stale-ticket.ts`, `src/infra/factories/make-close-stale-ticket-use-case.ts`, `src/infra/workers/auto-close-ticket-worker.ts`
+
+- [x] Task 45: Fila + worker do cron de 30min (sincroniza + decide estacionar + revisita estacionados)
+  - Acceptance: `RunTicketsSyncCronUseCase.execute()` roda `syncActiveTickets()` (compara status/mensagens frescas do Zammad com o banco, só grava se `hasChanged`; decide estacionar se parado ≥7 dias com a última resposta sendo minha) seguido de `revisitParkedTickets()` (olha os jobs `delayed` da fila de auto-fechamento; se o cliente já respondeu ou o ticket já foi fechado por fora, remove da fila e devolve pro banco; senão mantém estacionado)
+  - Agendamento via `queue.upsertJobScheduler(id, {every: 30min})` (API do BullMQ v6 — a antiga `{repeat: {every}}` em `queue.add()` foi removida nessa major, dava erro de compilação)
+  - **Verify — bateria de testes reais rodada nesta sessão, com Redis descartável (Docker, removido depois) e sem mexer nos 12 tickets reais do banco:**
+    1. `npx biome check src` e `npx tsc --noEmit`: limpos (0 erros).
+    2. **Dry-run de segurança** (script descartável, só leitura): confirmei que nenhum dos 12 tickets reais bate hoje no critério de estacionamento (ativo + minha última resposta + ≥7 dias) — importante porque rodar o `execute()` de verdade só é seguro se ele não for enfileirar um fechamento real de ticket de produção sem eu saber.
+    3. `execute()` completo rodado contra Zammad + Postgres reais: 2s, sem erro, sem mutação (esperado — nenhum ticket mudou desde a última sincronização).
+    4. Mecânica de estacionar/revisitar testada isolada (repository fake, sem tocar no banco real; IDs de ticket reais só pra buscar dado real do Zammad na revisita): ticket estacionado entra na fila com o `jobId` certo e some do banco (fake); revisita com "cliente ainda não respondeu" mantém estacionado (não sai da fila, não volta pro banco); revisita com "ticket já fechado" remove da fila e volta pro banco como `CLOSED`.
+  - Files: `src/infra/queues/sync-tickets-cron-queue.ts`, `src/infra/crons/register-sync-tickets-cron.ts`, `src/infra/use-cases/run-tickets-sync-cron.ts`, `src/infra/factories/make-run-tickets-sync-cron-use-case.ts`, `src/infra/workers/sync-tickets-cron-worker.ts`, `src/worker.ts`, `src/core/repositories/ticket-repository.ts` (+ `findAll`, `deleteByTicketId`), `src/infra/repositories/prisma-ticket-repository.ts`
+  - **Bloqueio real, ainda pendente:** o `REDIS_URL` do `.env` real não está acessível a partir daqui (`ECONNRESET` ao conectar) — todos os testes acima usaram um Redis descartável via Docker. O worker/cron não vai rodar no seu ambiente real enquanto isso não for resolvido (mesmo bloqueio já sinalizado na Fase 10).
+
+- [x] Task 46: `DTO` de `/tickets` ganha `ticketNumber` + prévia da primeira mensagem
+  - Acceptance: `MyTicket` ganha `ticketNumber: string` e `firstMessagePreview: string | null`; prévia vem de `ticketJson.messages[0]`, HTML removido via tags (`<[^>]+>`), entidades comuns decodificadas (`&nbsp;`, `&amp;`, etc.), espaços colapsados, truncado em 140 caracteres com `…`
+  - Nova função `toPlainTextPreview()` em `src/infra/libs/ticket-message-mapper.ts` (reaproveitando o arquivo que já lida com o formato das mensagens)
+  - Verify: `npx tsc --noEmit` e `npx biome check src` limpos; script descartável rodou `ListMyTicketsUseCase` contra o banco real — `ticketNumber` (`"88208"`, `"88229"`, `"88212"`) e `firstMessagePreview` truncado corretamente pros 3 primeiros tickets reais; confirmado que a rota `GET /tickets` não tem response schema zod que pudesse cortar os campos novos
+  - Files: `src/core/use-cases/list-my-tickets.ts`, `src/infra/use-cases/list-my-tickets.ts`, `src/infra/libs/ticket-message-mapper.ts`
+
+- [x] Task 47: Frontend — `TicketCard` (número + prévia + truncamento), detalhe (número no lugar do id), lightbox de imagem
+  - `TicketCard.tsx`: número do ticket (`#88208`) ao lado do badge de status; título truncado com `line-clamp-1`; no lugar do `id` cru, mostra `firstMessagePreview`; `updatedAt` já vinha sempre atualizado (dado real do backend), sem mudança necessária ali
+  - Detalhe do ticket (`tickets/[id]/page.tsx`): cabeçalho mostra `#{ticket.ticketNumber}` no lugar do `ticket.id`
+  - Novo `ImageLightbox.tsx`, seguindo o mesmo padrão do `ConfirmModal` existente (`components/ui/Modal.tsx`): fecha ao clicar no backdrop ou apertar Escape, mesmas classes de animação (`animate-fade-in`/`animate-scale-in`). Integrado no `MediaAttachment.tsx` — clicar numa imagem de anexo abre a lightbox; vídeos e arquivos não mudam
+  - Tipos `Ticket`/`ApiTicket` em `tickets-service.ts` ganham `ticketNumber` e `firstMessagePreview` (o spread `...ticket` em `listTickets()` já repassava os campos automaticamente, sem precisar tocar na função)
+  - Verify: `npx tsc --noEmit` (client) limpo; `npx biome check` (client, com `--config-path` explícito pro `biome.json` do projeto — sem isso ele não reconhece `noImgElement`/`tailwindDirectives` já configurados) limpo, 44 arquivos; `next build` limpo (rodei de novo depois de limpar um `.next` com cache velho que deu um erro falso de módulo não encontrado, sem relação com essas mudanças) — 8 rotas geradas normalmente, incluindo `/tickets/[id]`
+  - Files: `src/components/TicketCard.tsx`, `src/app/(app)/tickets/[id]/page.tsx`, `src/components/ImageLightbox.tsx` (novo), `src/components/MediaAttachment.tsx`, `src/service/tickets-service.ts`
+  - Scope: M
+  - **Pendente de verificação manual:** conferir visualmente no navegador (truncamento do título em telas estreitas, zoom da imagem em diferentes tamanhos de anexo) — só dá pra confirmar 100% olhando a UI renderizada de verdade.
