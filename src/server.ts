@@ -2,13 +2,15 @@ import Fastify from 'fastify'
 import { env } from '#env'
 import routes from './presentation/routes/routes'
 import errorHandler from './presentation/middlewares/error-handler'
+import { serializerCompiler, validatorCompiler, ZodTypeProvider } from 'fastify-type-provider-zod'
+import corsHandle from './presentation/middlewares/cors'
 
-const app = Fastify()
+const app = Fastify().withTypeProvider<ZodTypeProvider>()
 
-app.get('/', function (request, reply) {
-  reply.send({ hello: 'world' })
-})
+app.setValidatorCompiler(validatorCompiler)
+app.setSerializerCompiler(serializerCompiler)
 
+app.register(corsHandle)
 app.register(routes)
 app.register(errorHandler)
 
