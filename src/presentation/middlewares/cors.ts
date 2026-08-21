@@ -1,11 +1,10 @@
-import fastifyCors from "@fastify/cors";
-import { FastifyInstance } from "fastify";
+import fastifyCors from "@fastify/cors"
+import type { FastifyInstance } from "fastify"
 
-export default async function corsHandle(app: FastifyInstance){
+export default async function corsHandle(app: FastifyInstance) {
 	app.register(fastifyCors, {
 		origin: true,
 		methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-		credentials: true
+		credentials: true,
 	})
-
 }

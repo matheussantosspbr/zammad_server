@@ -1,28 +1,29 @@
 {
-  "name": "server",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "start": "node --env-file=.env ./dist/server.js",
-    "dev": "tsx watch --env-file=.env ./src/server.ts"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "imports": {
-    "#env": [
-      "./dist/config/env.js"
-    ]
-  },
-  "dependencies": {
-    "@fastify/cors": "^11.3.0",
-    "@types/node": "^26.2.0",
-    "fastify": "^5.12.1",
-    "fastify-type-provider-zod": "^7.0.0",
-    "tsx": "^4.23.12",
-    "typescript": "^7.0.2",
-    "zod": "^4.4.3"
-  }
+	"name": "server",
+	"version": "1.0.0",
+	"description": "",
+	"main": "index.js",
+	"scripts": {
+		"start": "node --env-file=.env ./dist/server.js",
+		"dev": "tsx watch --env-file=.env ./src/server.ts"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"type": "commonjs",
+	"imports": {
+		"#env": [
+			"./dist/config/env.js"
+		]
+	},
+	"dependencies": {
+		"@biomejs/biome": "^2.5.9",
+		"@fastify/cors": "^11.3.0",
+		"@types/node": "^26.2.0",
+		"fastify": "^5.12.1",
+		"fastify-type-provider-zod": "^7.0.0",
+		"tsx": "^4.23.12",
+		"typescript": "^7.0.2",
+		"zod": "^4.4.3"
+	}
 }
