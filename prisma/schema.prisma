@@ -97,7 +97,7 @@ model Verification {
 
 model Tickets{
 	id         		String   @id @default(cuid())
-	ticketId   		Int
+	ticketId   		Int      @unique
 	ticketNumber 	String
 	title			String
 	ticketStatus    TicketStatus

@@ -254,3 +254,73 @@ Spec: [specs/002-zammad-user-directory-gate.md](../specs/002-zammad-user-directo
 - [x] Lógica de match validada com dados reais do Zammad (bate, bate case-insensitive, não bate)
 - [ ] **Pendente de verificação manual:** cadastro real de ponta a ponta (login novo → `ownerId` preenchido no banco) só dá pra confirmar você testando no navegador com um email que exista/não exista no Zammad
 - [x] `ZAMMAD_TOKEN` nunca aparece em nenhum log (só usado internamente pela classe `Zammad`)
+
+## Fase 9: Sincronização dos tickets do admin com o Zammad
+
+Spec: [specs/003-zammad-owner-tickets-sync.md](../specs/003-zammad-owner-tickets-sync.md). Escopo "1 admin": só o `OWNER_EMAIL`, tickets onde ele é `owner_id`. Visibilidade por `customer_id` fica pra um passo futuro.
+
+- [x] Task 27: `Zammad.searchTicketsByOwner(ownerId)` — paginado
+  - Acceptance: usa `GET /api/v1/tickets/search` com `condition[ticket.owner_id]`, percorre páginas até vir incompleta
+  - Verify: testado contra o Zammad real — **12 tickets**, batendo exatamente com o `total_count: 12` do print que você mandou
+  - Files: `src/infra/libs/zammad-client.ts`
+
+- [x] Task 28: `@@unique` em `ticketId`
+  - Acceptance: migration aplicada, upsert por `ticketId` possível
+  - Files: `prisma/schema.prisma`, `prisma/migrations/20260821180303_ticket_id_unique/`
+
+- [x] Task 29: Repository + use-case + factory (`SyncOwnerTicketsUseCase`)
+  - Acceptance: mapeia `id→ticketId`, `number→ticketNumber`, `title→title`, `state→ticketStatus` (espaço vira `_`), objeto inteiro `→ticketJson`; upsert por `ticketId`
+  - Verify: rodei contra o Zammad e o banco reais — 12 tickets salvos com os campos certos (`pending_reminder`, `pending_close`, `closed`, etc.); rodei de novo e continuou 12 (upsert idempotente, sem duplicar)
+  - Files: `src/core/repositories/ticket-repository.ts`, `src/infra/repositories/prisma-ticket-repository.ts`, `src/core/use-cases/sync-owner-tickets.ts`, `src/infra/use-cases/sync-owner-tickets.ts`, `src/infra/factories/make-sync-owner-tickets-use-case.ts`
+
+- [x] Task 30: Hook `user.create.after` — dispara o worker
+  - Acceptance: só quando `user.email === env.OWNER_EMAIL` e `ownerId` foi definido; fire-and-forget (não usa `await` no fluxo principal), erro cai num `.catch` que só loga, não derruba o cadastro/login
+  - Files: `src/infra/libs/auth.ts`
+  - **Pendente de verificação manual:** só dá pra confirmar o disparo automático de verdade com um cadastro novo do dono (a conta atual já existia antes do hook, por isso rodei a sincronização manualmente pra validar a lógica)
+
+### Checkpoint
+- [x] 12 tickets reais sincronizados, campos mapeados certos
+- [x] Rodar de novo não duplica
+- [ ] Disparo automático via cadastro real (não testável sem um novo signup do `OWNER_EMAIL`)
+
+## Fase 10: Worker de verdade (BullMQ + Redis), em vez de fire-and-forget
+
+Motivo: você decidiu trocar de hospedagem (Railway/Render/Fly, processo contínuo) em vez de adaptar pra serverless — mas depois pediu um worker de verdade (fila separada) mesmo assim, escolhendo BullMQ + Redis.
+
+- [x] Task 31: Fila (`src/infra/libs/queue.ts`) — `Queue` do BullMQ + conexão `ioredis`
+  - Acceptance: `syncOwnerTicketsQueue`, nova env var `REDIS_URL`
+  - Files: `src/infra/libs/queue.ts`, `src/core/config/env.ts`, `.env.example`
+
+- [x] Task 32: `src/worker.ts` — processo separado de verdade
+  - Acceptance: entrypoint novo (não é mais dentro do `server.ts`), roda com `npm run worker` (dev) / `npm run worker:start` (prod, depois do `npm run build`), consome a fila e chama o mesmo `SyncOwnerTicketsUseCase` de antes
+  - Files: `src/worker.ts`, `package.json`
+
+- [x] Task 33: Hook só enfileira
+  - Acceptance: `user.create.after` agora só dá `queue.add(...)` (rápido, com `await` — se o Redis estiver fora do ar, você fica sabendo na hora, em vez de perder o job silenciosamente como no fire-and-forget)
+  - Files: `src/infra/libs/auth.ts`
+
+- [x] Task 34: Teste de ponta a ponta de verdade
+  - Subi um Redis descartável via Docker (só pra esse teste, removido depois — não mexi no Redis de outro projeto que já tinha rodando), apaguei os 12 tickets do banco, subi o worker como processo separado, enfileirei um job real → o worker (rodando num processo distinto) processou e recriou os 12 tickets certinhos. Confirma que a arquitetura "hook enfileira / worker processa em outro processo" funciona de verdade, não só no papel.
+  - Scope: validação, sem arquivos novos
+
+### Checkpoint
+- [x] Worker roda como processo separado (`node dist/worker.js`), não dentro do servidor HTTP
+- [x] Fluxo completo testado com Redis real (Docker descartável) — enfileirar → processar → salvar no banco
+- [ ] **Bloqueio real:** falta `REDIS_URL` no seu `.env` — sem isso o servidor volta a dar erro de env inválida (mesmo padrão de antes com `GOOGLE_CLIENT_ID`). Você vai precisar de um Redis de verdade em produção também (Railway/Render têm addon; Upstash tem plano grátis que funciona bem com BullMQ).
+
+## Fase 11: Integração dos tickets reais com o frontend
+
+Escopo confirmado com você: só dashboard + lista de tickets agora. Tela de detalhe/chat continua fora — backend ainda não busca mensagens/artigos do Zammad (item futuro).
+
+- [x] Task 35: Backend — `GET /tickets` e `GET /tickets/stats`
+  - Acceptance: `requireAuth` (qualquer usuário logado, tickets são sempre os do próprio usuário); mapeia os 5 status reais do Zammad (`new`, `open`, `pending_reminder`, `pending_close`, `closed`) pros 3 buckets que o frontend já esperava (`OPEN`/`PENDING`/`CLOSED`) — `new`+`open`→OPEN, `pending_*`→PENDING, `closed`→CLOSED
+  - Segue a mesma arquitetura em camadas: `ITicketRepository.findByUserId` novo, `ListMyTicketsUseCase`/`GetMyTicketStatsUseCase`, controllers, factories. Mapeamento de status em `src/core/entities/ticket-status.ts` (usei a pasta `core/entities` que você já tinha criado)
+  - Verify: sem sessão → 401 (confirmado). Testado direto com o `userId` real do dono: `/tickets` retornou os 12 tickets certos (id, subject, status, datas vindas do `ticketJson`); `/tickets/stats` retornou `{total: 12, open: 0, pending: 4, closed: 8}` — bate com os dados reais sincronizados na Fase 9
+  - Files: `src/core/entities/ticket-status.ts`, `src/core/repositories/ticket-repository.ts`, `src/infra/repositories/prisma-ticket-repository.ts`, `src/core/use-cases/{list-my-tickets,get-my-ticket-stats}.ts`, `src/infra/use-cases/{list-my-tickets,get-my-ticket-stats}.ts`, `src/presentation/controllers/{list-my-tickets,get-my-ticket-stats}-controller.ts`, `src/infra/factories/make-{list-my-tickets,get-my-ticket-stats}-controller.ts`, `src/presentation/routes/tickets.ts`, `src/presentation/routes/routes.ts`
+
+- [x] Task 36: Frontend — troca o mock por dados reais
+  - Acceptance: `listTickets()`/`getTicketStats()` em `tickets-service.ts` agora chamam a API real; `getTicket()` (nunca usado em lugar nenhum do app — confirmei via grep) e todo o `MOCK_TICKETS` foram removidos
+  - **Decisão explícita, não escondida:** `sendTicketMessage()` continua mockado (só atualiza o estado local, não persiste) — a tela de detalhe/chat ficou fora do escopo desta rodada. Se você clicar num ticket real e "responder", a mensagem aparece na tela mas some ao recarregar a página.
+  - Verify: `npx tsc --noEmit`, `npx biome check .` e `npm run build` limpos; bundle até ficou menor (menos código de mock)
+  - Files: `src/service/tickets-service.ts`
+  - Scope: S

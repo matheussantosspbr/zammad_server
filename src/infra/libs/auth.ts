@@ -1,6 +1,7 @@
 import { prismaAdapter } from "@better-auth/prisma-adapter"
 import { betterAuth } from "better-auth"
 import { env } from "#env"
+import { syncOwnerTicketsQueue } from "../queues/sync-owner-tickets-queue.js"
 import { prisma } from "./prisma.js"
 import Zammad from "./zammad-client.js"
 
@@ -43,6 +44,16 @@ export const auth = betterAuth({
 							ownerId: String(matchedZammadUser.id),
 							...(isOwner ? { status: "APPROVED" } : {}),
 						},
+					}
+				},
+				after: async (user) => {
+					const ownerId = user.ownerId as string | undefined
+
+					if (user.email === env.OWNER_EMAIL && ownerId) {
+						await syncOwnerTicketsQueue.add("sync-owner-tickets", {
+							userId: user.id,
+							zammadOwnerId: Number(ownerId),
+						})
 					}
 				},
 			},

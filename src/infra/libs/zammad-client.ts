@@ -6,7 +6,23 @@ export interface ZammadUser {
 	[key: string]: unknown
 }
 
+export interface ZammadTicket {
+	id: number
+	number: string
+	title: string
+	state: string
+	owner_id: number
+	customer_id: number
+	[key: string]: unknown
+}
+
+interface ZammadTicketSearchResponse {
+	records: ZammadTicket[]
+	total_count: number
+}
+
 const USERS_PER_PAGE = 100
+const TICKETS_PER_PAGE = 100
 
 export default class Zammad {
 	constructor(private readonly token: string) {}
@@ -42,6 +58,39 @@ export default class Zammad {
 
 			if (pageUsers.length < USERS_PER_PAGE) {
 				return users
+			}
+
+			page += 1
+		}
+	}
+
+	async searchTicketsByOwner(ownerId: number): Promise<ZammadTicket[]> {
+		const tickets: ZammadTicket[] = []
+		let page = 1
+
+		for (;;) {
+			const params = new URLSearchParams({
+				"condition[ticket.owner_id][operator]": "is",
+				"condition[ticket.owner_id][value]": String(ownerId),
+				expand: "true",
+				page: String(page),
+				per_page: String(TICKETS_PER_PAGE),
+				with_total_count: "true",
+			})
+
+			const response = await fetch(`${env.ZAMMAD_BASE_URL}/api/v1/tickets/search?${params}`, {
+				headers: this.headers,
+			})
+
+			if (!response.ok) {
+				throw new Error(`Zammad respondeu ${response.status} ao buscar tickets`)
+			}
+
+			const result = (await response.json()) as ZammadTicketSearchResponse
+			tickets.push(...result.records)
+
+			if (result.records.length < TICKETS_PER_PAGE) {
+				return tickets
 			}
 
 			page += 1

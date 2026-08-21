@@ -6,15 +6,16 @@ const PORT_MAX = 65535
 const PORT_RANGE_MESSAGE = `PORT deve estar entre ${PORT_MIN} e ${PORT_MAX}`
 
 const envSchema = z.object({
-	APPLICATION_PORT: z.preprocess(
-		(value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-		z.coerce
-			.number("PORT deve ser um número")
-			.int("PORT deve ser um número inteiro")
-			.min(PORT_MIN, PORT_RANGE_MESSAGE)
-			.max(PORT_MAX, PORT_RANGE_MESSAGE)
-			.default(3333),
-	),
+	APPLICATION_PORT: z.preprocess((value) => {
+		if (typeof value === "string" && value.trim() !== "") return value
+		// Railway/Render/Fly injetam a porta em `PORT`, não `APPLICATION_PORT`.
+		return process.env.PORT
+	}, z.coerce
+		.number("PORT deve ser um número")
+		.int("PORT deve ser um número inteiro")
+		.min(PORT_MIN, PORT_RANGE_MESSAGE)
+		.max(PORT_MAX, PORT_RANGE_MESSAGE)
+		.default(3333)),
 	DATABASE_URL: z.url("DATABASE_URL deve ser uma connection string válida"),
 	BETTER_AUTH_SECRET: z
 		.string("BETTER_AUTH_SECRET é obrigatório")
@@ -34,6 +35,7 @@ const envSchema = z.object({
 			(value) => Buffer.from(value, "base64").length === 32,
 			"TOKEN_ENCRYPTION_KEY deve ser uma chave base64 de 32 bytes (openssl rand -base64 32)",
 		),
+	REDIS_URL: z.url("REDIS_URL deve ser uma URL válida (ex: redis://localhost:6379)"),
 })
 
 const parsed = envSchema.safeParse(process.env)
