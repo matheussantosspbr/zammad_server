@@ -21,6 +21,33 @@ interface ZammadTicketSearchResponse {
 	total_count: number
 }
 
+export interface ZammadArticleAttachment {
+	id: number
+	store_file_id: number
+	filename: string
+	size: string
+	preferences: { "Content-Type"?: string; [key: string]: unknown }
+}
+
+export interface ZammadArticle {
+	id: number
+	ticket_id: number
+	from: string
+	body: string
+	content_type: string
+	internal: boolean
+	sender: "Agent" | "Customer" | "System"
+	created_at: string
+	attachments: ZammadArticleAttachment[]
+	[key: string]: unknown
+}
+
+export interface ZammadAttachmentFile {
+	buffer: Buffer
+	contentType: string
+	filename: string
+}
+
 const USERS_PER_PAGE = 100
 const TICKETS_PER_PAGE = 100
 
@@ -94,6 +121,46 @@ export default class Zammad {
 			}
 
 			page += 1
+		}
+	}
+
+	async getTicketArticles(ticketId: number): Promise<ZammadArticle[]> {
+		const response = await fetch(
+			`${env.ZAMMAD_BASE_URL}/api/v1/ticket_articles/by_ticket/${ticketId}`,
+			{ headers: this.headers },
+		)
+
+		if (!response.ok) {
+			throw new Error(`Zammad respondeu ${response.status} ao buscar mensagens do ticket`)
+		}
+
+		return (await response.json()) as ZammadArticle[]
+	}
+
+	async getAttachment(
+		ticketId: number,
+		articleId: number,
+		attachmentId: number,
+	): Promise<ZammadAttachmentFile> {
+		const response = await fetch(
+			`${env.ZAMMAD_BASE_URL}/api/v1/ticket_attachment/${ticketId}/${articleId}/${attachmentId}`,
+			{ headers: this.headers },
+		)
+
+		if (!response.ok) {
+			throw new Error(`Zammad respondeu ${response.status} ao buscar anexo`)
+		}
+
+		const buffer = Buffer.from(await response.arrayBuffer())
+		const contentType = response.headers.get("content-type") ?? "application/octet-stream"
+		const disposition = response.headers.get("content-disposition") ?? ""
+		const filenameMatch = disposition.match(/filename="?([^";]+)"?/)
+		const rawFilename = filenameMatch?.[1]
+
+		return {
+			buffer,
+			contentType,
+			filename: rawFilename ? decodeURIComponent(rawFilename) : `attachment-${attachmentId}`,
 		}
 	}
 }

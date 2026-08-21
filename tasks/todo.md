@@ -324,3 +324,33 @@ Escopo confirmado com você: só dashboard + lista de tickets agora. Tela de det
   - Verify: `npx tsc --noEmit`, `npx biome check .` e `npm run build` limpos; bundle até ficou menor (menos código de mock)
   - Files: `src/service/tickets-service.ts`
   - Scope: S
+
+## Fase 12: Mensagens reais do ticket (chat) + anexos
+
+- [x] Task 37: `Zammad.getTicketArticles(ticketId)` e `Zammad.getAttachment(ticketId, articleId, attachmentId)`
+  - Acceptance: busca `/api/v1/ticket_articles/by_ticket/:id` (sem paginação — resposta é array simples, confirmado nos dados reais) e `/api/v1/ticket_attachment/:ticketId/:articleId/:attachmentId` (binário)
+  - Verify: testado contra o Zammad real — 9 artigos do ticket 246, batendo exatamente com o exemplo que você mandou; anexo real baixado (134164 bytes, `image/png`, filename decodificado corretamente do `Content-Disposition`, que vinha URL-encoded)
+  - Files: `src/infra/libs/zammad-client.ts`
+
+- [x] Task 38: `GET /tickets/:ticketId/messages` — mensagens mapeadas
+  - Acceptance: `sender: "Agent"` (você, o dono) → `author: "user"` (aparece como "minha" mensagem, alinhada à direita); `sender: "Customer"/"System"` → `author: "agent"`. Nome extraído de `from` (remove o `<email>`). Anexos viram URLs relativas pro proxy (`/tickets/:id/articles/:articleId/attachments/:attachmentId`), nunca a URL direta do Zammad. Checagem de dono do ticket (`ticket.userId === request.userId`) antes de expor qualquer mensagem — 404 tanto pra ticket inexistente quanto pra ticket de outro usuário (não vaza qual dos dois é o caso)
+  - Verify: testado com o `userId` real — 2 primeiras mensagens do ticket 246 bateram exatamente (nome "Carlos Alberto" extraído certo, HTML preservado, anexos com URLs de proxy corretas); testei os dois casos de 404 (ticket inexistente e ticket de outro usuário) separadamente
+  - Files: `src/core/use-cases/list-ticket-messages.ts`, `src/infra/use-cases/list-ticket-messages.ts`, `src/presentation/controllers/list-ticket-messages-controller.ts`, `src/infra/factories/make-list-ticket-messages-controller.ts`, `src/core/repositories/ticket-repository.ts` (+ `findByTicketId`), `src/infra/repositories/prisma-ticket-repository.ts`
+
+- [x] Task 39: Proxy de anexo — `GET /tickets/:ticketId/articles/:articleId/attachments/:attachmentId`
+  - Acceptance: rota raw do Fastify (não passa pelo `adaptRoute`, que é JSON-only — mesmo precedente do proxy `/api/auth/*`), checa dono do ticket, busca o binário no Zammad com o `ZAMMAD_TOKEN` de serviço, repassa `Content-Type` real pro navegador. Frontend nunca fala direto com o Zammad nem vê o token.
+  - Files: `src/presentation/routes/tickets.ts`
+
+- [x] Task 40: Frontend — chat real com HTML sanitizado
+  - `dompurify` novo (sanitiza HTML antes de `dangerouslySetInnerHTML` — nunca renderiza o body do Zammad cru, é conteúdo de terceiros/clientes)
+  - `ChatMessage.tsx`: distingue `text/html` (sanitizado) de `text/plain`; mostra badge "Nota interna" quando `internal: true` (visível só pra você, o agente — igual ao próprio Zammad faz)
+  - `MediaAttachment.tsx`: novo fallback genérico (ícone + link) pra anexos que não são imagem/vídeo
+  - **Removido código morto:** `ChatComposer.tsx` (componente inteiro), `sendMessage`/`sendTicketMessage` — não tinha mais nenhuma chamada real desde que a resposta a ticket foi trocada por um aviso "ainda não disponível" (não faz sentido manter um formulário que parece funcionar mas não persiste nada, ainda mais ao lado de mensagens reais)
+  - Verify: `npx tsc --noEmit`, `npx biome check .` e `npm run build` limpos
+  - Files: `src/components/ChatMessage.tsx`, `src/components/MediaAttachment.tsx`, `src/app/(app)/tickets/[id]/page.tsx`, `src/store/tickets-store.ts`, `src/service/tickets-service.ts`
+  - Scope: M
+
+### ⚠️ Risco de produção identificado (não corrigido, precisa de decisão sua)
+Os anexos usam `<img src>`/`<video src>` direto pro backend, autenticados só pelo cookie de sessão do Better Auth (`SameSite=Lax`). Isso funciona em dev porque `localhost:3001` e `localhost:3333` contam como "mesmo site" (browsers ignoram a porta pra isso). **Mas se front e back ficarem em domínios diferentes de verdade em produção** (ex: Vercel + Railway, que foi o plano discutido), `SameSite=Lax` **não envia o cookie** nessas requisições — as imagens dos tickets (e possivelmente outras chamadas autenticadas) vão falhar com 401. Isso não é exclusivo dos anexos: **qualquer chamada autenticada cross-domain tem esse mesmo risco**, incluindo as que já existem (`/tickets`, `/me/integrations`, etc.) — só não apareceu ainda porque nunca testamos com domínios de verdade diferentes.
+- **Fix padrão:** configurar o cookie de sessão do Better Auth com `SameSite=None; Secure` (exige HTTPS, que Vercel/Railway já dão de graça) em vez do `Lax` padrão.
+- Não apliquei essa mudança agora porque é uma configuração de segurança que afeta o app inteiro, não só os anexos — prefiro seu aval antes de mexer nisso.
