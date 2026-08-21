@@ -2,6 +2,7 @@ import { prismaAdapter } from "@better-auth/prisma-adapter"
 import { betterAuth } from "better-auth"
 import { env } from "#env"
 import { prisma } from "./prisma.js"
+import Zammad from "./zammad-client.js"
 
 export const auth = betterAuth({
 	baseURL: env.BETTER_AUTH_URL,
@@ -25,8 +26,23 @@ export const auth = betterAuth({
 		user: {
 			create: {
 				before: async (user) => {
-					if (user.email === env.OWNER_EMAIL) {
-						return { data: { ...user, status: "APPROVED" } }
+					const zammadUsers = await new Zammad(env.ZAMMAD_TOKEN).listAllUsers()
+					const matchedZammadUser = zammadUsers.find(
+						(zammadUser) => zammadUser.email.toLowerCase() === user.email.toLowerCase(),
+					)
+
+					if (!matchedZammadUser) {
+						return false
+					}
+
+					const isOwner = user.email === env.OWNER_EMAIL
+
+					return {
+						data: {
+							...user,
+							ownerId: String(matchedZammadUser.id),
+							...(isOwner ? { status: "APPROVED" } : {}),
+						},
 					}
 				},
 			},

@@ -27,6 +27,7 @@ const envSchema = z.object({
 	DISCORD_CLIENT_SECRET: z.string("DISCORD_CLIENT_SECRET é obrigatório").min(1),
 	OWNER_EMAIL: z.email("OWNER_EMAIL deve ser um email válido"),
 	ZAMMAD_BASE_URL: z.url("ZAMMAD_BASE_URL deve ser uma URL válida"),
+	ZAMMAD_TOKEN: z.string("ZAMMAD_TOKEN é obrigatório").min(1),
 	TOKEN_ENCRYPTION_KEY: z
 		.string("TOKEN_ENCRYPTION_KEY é obrigatório")
 		.refine(

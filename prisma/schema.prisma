@@ -20,6 +20,7 @@ model User {
   image         String?
   status        UserStatus @default(PENDING)
   discordUserId String?    @unique
+  ownerId       String?    @unique
   createdAt     DateTime
   updatedAt     DateTime
 

@@ -4,13 +4,13 @@ import {
 	InvalidZammadTokenError,
 } from "../../core/use-cases/connect-zammad.js"
 import { tokenCipher } from "../libs/token-cipher.js"
-import { verifyZammadToken } from "../libs/zammad-client.js"
+import Zammad from "../libs/zammad-client.js"
 
 export class ConnectZammadUseCase implements IConnectZammadUseCase {
 	constructor(private readonly zammadIntegrationRepository: IZammadIntegrationRepository) {}
 
 	async execute(userId: string, token: string): Promise<{ last4: string }> {
-		const isValid = await verifyZammadToken(token)
+		const isValid = await new Zammad(token).verifyToken()
 
 		if (!isValid) {
 			throw new InvalidZammadTokenError()

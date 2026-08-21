@@ -225,3 +225,32 @@ Plano: [tasks/plan.md](plan.md) · Spec: [specs/001-prisma-better-auth.md](../sp
   - Files: `src/components/ui/PasswordInput.tsx`, `src/service/integrations-service.ts`, `src/service/http-client.ts`, `src/app/(app)/integrations/page.tsx`
   - Scope: M
   - **Pendente de verificação manual:** testar com um token real do Zammad (só você tem acesso pra gerar um).
+
+## Fase 8: Gate de cadastro pelo diretório de usuários do Zammad
+
+Spec: [specs/002-zammad-user-directory-gate.md](../specs/002-zammad-user-directory-gate.md). Decisões confirmadas com você: vale pra qualquer cadastro (não só o dono); bater com o Zammad não auto-aprova, só libera passar pelo fluxo de aprovação manual que já existe.
+
+- [x] Task 23: `Zammad.listAllUsers()` — paginado
+  - Acceptance: novo método na classe `Zammad` percorre todas as páginas de `GET /api/v1/users` até vir uma incompleta, retorna a lista completa
+  - Verify: testado contra o Zammad real — 24 usuários retornados corretamente, inclusive depois de você reduzir `USERS_PER_PAGE` pra 10 (confirma que a paginação percorre múltiplas páginas de verdade, não só assume 1 página)
+  - Files: `src/infra/libs/zammad-client.ts`
+
+- [x] Task 24: `ZAMMAD_TOKEN` no env
+  - Acceptance: nova var validada no `env.ts`, documentada no `.env.example`
+  - **Ajuste:** você já tinha colocado um `ZAMMAD_TOKEN` no `.env` real por conta própria — usei esse nome em vez de criar `ZAMMAD_ADMIN_TOKEN` como a spec previa, pra não duplicar. Já tinha um valor real, então nem precisei bloquear esperando você preencher.
+  - Files: `src/core/config/env.ts`, `.env.example`
+
+- [x] Task 25: Campo `ownerId` no `User`
+  - Acceptance: `ownerId String? @unique` no schema, migration aplicada
+  - Verify: `npx prisma migrate deploy` OK
+  - Files: `prisma/schema.prisma`, `prisma/migrations/20260821165803_add_owner_id/`
+
+- [x] Task 26: Hook de gate no cadastro
+  - Acceptance: `databaseHooks.user.create.before` em `auth.ts` busca o email na lista paginada do Zammad (case-insensitive); se achar, inclui `ownerId` nos dados e segue o fluxo (incluindo a regra existente do `OWNER_EMAIL`); se não achar, retorna `false`
+  - Verify: testei a lógica de match direto contra os 24 usuários reais — email conhecido (`matheussantosspbr@gmail.com`, id 5) bate certo, o mesmo email em maiúsculas também bate (case-insensitive OK), email desconhecido não bate. `npx tsc --noEmit` e `npx biome check` limpos. Servidor reiniciou sozinho e segue respondendo normalmente com a env var nova.
+  - Files: `src/infra/libs/auth.ts`
+
+### Checkpoint
+- [x] Lógica de match validada com dados reais do Zammad (bate, bate case-insensitive, não bate)
+- [ ] **Pendente de verificação manual:** cadastro real de ponta a ponta (login novo → `ownerId` preenchido no banco) só dá pra confirmar você testando no navegador com um email que exista/não exista no Zammad
+- [x] `ZAMMAD_TOKEN` nunca aparece em nenhum log (só usado internamente pela classe `Zammad`)
