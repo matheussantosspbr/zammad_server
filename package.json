@@ -5,7 +5,8 @@
 	"main": "index.js",
 	"scripts": {
 		"start": "node --env-file=.env ./dist/server.js",
-		"dev": "tsx watch --env-file=.env ./src/server.ts"
+		"dev": "tsx watch --env-file=.env ./src/server.ts",
+		"build": "tsc"
 	},
 	"keywords": [],
 	"author": "",
@@ -13,20 +14,27 @@
 	"type": "module",
 	"imports": {
 		"#env": [
-			"./dist/config/env.js"
+			"./dist/core/config/env.js"
 		]
 	},
 	"dependencies": {
+		"@better-auth/prisma-adapter": "1.7.1",
 		"@biomejs/biome": "^2.5.9",
 		"@fastify/cors": "^11.3.0",
+		"@prisma/adapter-pg": "^7.9.1",
 		"@prisma/client": "^7.9.1",
 		"@types/node": "^26.2.0",
 		"better-auth": "^1.7.1",
+		"dotenv": "^17.4.2",
 		"fastify": "^5.12.1",
 		"fastify-type-provider-zod": "^7.0.0",
+		"pg": "^8.23.0",
 		"prisma": "^7.9.1",
 		"tsx": "^4.23.12",
 		"typescript": "^7.0.2",
 		"zod": "^4.4.3"
+	},
+	"devDependencies": {
+		"@types/pg": "^8.23.1"
 	}
 }
