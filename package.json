@@ -10,7 +10,7 @@
 	"keywords": [],
 	"author": "",
 	"license": "ISC",
-	"type": "commonjs",
+	"type": "module",
 	"imports": {
 		"#env": [
 			"./dist/config/env.js"
@@ -19,9 +19,12 @@
 	"dependencies": {
 		"@biomejs/biome": "^2.5.9",
 		"@fastify/cors": "^11.3.0",
+		"@prisma/client": "^7.9.1",
 		"@types/node": "^26.2.0",
+		"better-auth": "^1.7.1",
 		"fastify": "^5.12.1",
 		"fastify-type-provider-zod": "^7.0.0",
+		"prisma": "^7.9.1",
 		"tsx": "^4.23.12",
 		"typescript": "^7.0.2",
 		"zod": "^4.4.3"

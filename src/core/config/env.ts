@@ -14,7 +14,17 @@ const envSchema = z.object({
             .min(PORT_MIN, PORT_RANGE_MESSAGE)
             .max(PORT_MAX, PORT_RANGE_MESSAGE)
             .default(3333),
-    )
+    ),
+    DATABASE_URL: z.url("DATABASE_URL deve ser uma connection string válida"),
+    BETTER_AUTH_SECRET: z
+        .string("BETTER_AUTH_SECRET é obrigatório")
+        .min(16, "BETTER_AUTH_SECRET deve ter pelo menos 16 caracteres"),
+    BETTER_AUTH_URL: z.url("BETTER_AUTH_URL deve ser uma URL válida"),
+    GOOGLE_CLIENT_ID: z.string("GOOGLE_CLIENT_ID é obrigatório").min(1),
+    GOOGLE_CLIENT_SECRET: z.string("GOOGLE_CLIENT_SECRET é obrigatório").min(1),
+    DISCORD_CLIENT_ID: z.string("DISCORD_CLIENT_ID é obrigatório").min(1),
+    DISCORD_CLIENT_SECRET: z.string("DISCORD_CLIENT_SECRET é obrigatório").min(1),
+    OWNER_EMAIL: z.email("OWNER_EMAIL deve ser um email válido"),
 });
 
 const parsed = envSchema.safeParse(process.env);

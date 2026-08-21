@@ -5,9 +5,9 @@ import {
 	type ZodTypeProvider,
 } from "fastify-type-provider-zod"
 import { env } from "#env"
-import corsHandle from "./presentation/middlewares/cors"
-import errorHandler from "./presentation/middlewares/error-handler"
-import routes from "./presentation/routes/routes"
+import corsHandle from "./presentation/middlewares/cors.js"
+import errorHandler from "./presentation/middlewares/error-handler.js"
+import routes from "./presentation/routes/routes.js"
 
 const app = Fastify().withTypeProvider<ZodTypeProvider>()
 
