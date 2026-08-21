@@ -1,6 +1,9 @@
 -- CreateEnum
 CREATE TYPE "UserStatus" AS ENUM ('PENDING', 'APPROVED', 'BLOCKED');
 
+-- CreateEnum
+CREATE TYPE "TicketStatus" AS ENUM ('new', 'open', 'pending_reminder', 'pending_close', 'closed');
+
 -- CreateTable
 CREATE TABLE "user" (
     "id" TEXT NOT NULL,
@@ -9,6 +12,8 @@ CREATE TABLE "user" (
     "emailVerified" BOOLEAN NOT NULL,
     "image" TEXT,
     "status" "UserStatus" NOT NULL DEFAULT 'PENDING',
+    "discordUserId" TEXT,
+    "ownerId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -34,6 +39,7 @@ CREATE TABLE "account" (
     "id" TEXT NOT NULL,
     "accountId" TEXT NOT NULL,
     "providerId" TEXT NOT NULL,
+    "issuer" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "accessToken" TEXT,
     "refreshToken" TEXT,
@@ -49,6 +55,21 @@ CREATE TABLE "account" (
 );
 
 -- CreateTable
+CREATE TABLE "zammad_integration" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "ciphertext" TEXT NOT NULL,
+    "iv" TEXT NOT NULL,
+    "tag" TEXT NOT NULL,
+    "keyVersion" INTEGER NOT NULL,
+    "last4" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "zammad_integration_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "verification" (
     "id" TEXT NOT NULL,
     "identifier" TEXT NOT NULL,
@@ -60,14 +81,49 @@ CREATE TABLE "verification" (
     CONSTRAINT "verification_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "Tickets" (
+    "id" TEXT NOT NULL,
+    "ticketId" INTEGER NOT NULL,
+    "ticketNumber" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "ticketStatus" "TicketStatus" NOT NULL,
+    "ticketJson" JSONB NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "userId" TEXT NOT NULL,
+
+    CONSTRAINT "Tickets_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "user_email_key" ON "user"("email");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "user_discordUserId_key" ON "user"("discordUserId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "user_ownerId_key" ON "user"("ownerId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "session_token_key" ON "session"("token");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "account_issuer_accountId_key" ON "account"("issuer", "accountId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "zammad_integration_userId_key" ON "zammad_integration"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Tickets_ticketId_key" ON "Tickets"("ticketId");
 
 -- AddForeignKey
 ALTER TABLE "session" ADD CONSTRAINT "session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "account" ADD CONSTRAINT "account_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "zammad_integration" ADD CONSTRAINT "zammad_integration_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Tickets" ADD CONSTRAINT "Tickets_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
