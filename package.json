@@ -1,0 +1,26 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node --env-file=.env ./dist/server.js",
+    "dev": "tsx watch --env-file=.env ./src/server.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+	"imports": {
+		"#env": [
+		"./dist/config/env.js"
+		]
+	},
+  "dependencies": {
+    "@types/node": "^26.2.0",
+    "fastify": "^5.12.1",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "zod": "^4.4.3"
+  }
+}

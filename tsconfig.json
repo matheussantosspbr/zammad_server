@@ -1,0 +1,26 @@
+{
+	"compilerOptions": {
+		"types": ["node"],
+		"rootDir": "./src",
+		"outDir": "./dist",
+		"target": "ES2022",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+
+        "typeRoots": [
+            "./src/types",
+            "./node_modules/@types"
+        ],
+
+		"paths": {
+			"#env": ["./src/core/config/env.ts"],
+		}
+	},
+
+	// Include and Exclude Options
+	"include": ["src"],
+	"exclude": ["node_modules"]
+}
