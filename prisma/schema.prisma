@@ -27,6 +27,7 @@ model User {
   sessions          Session[]
   accounts          Account[]
   zammadIntegration ZammadIntegration?
+  tickets           Tickets[]
 
   @@map("user")
 }
@@ -91,4 +92,25 @@ model Verification {
   updatedAt  DateTime?
 
   @@map("verification")
+}
+
+
+model Tickets{
+	id         		String   @id @default(cuid())
+	ticketId   		Int
+	ticketNumber 	String
+	title			String
+	ticketStatus    TicketStatus
+	ticketJson      Json
+	updatedAt       DateTime @updatedAt
+	userId     		String
+  	user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum TicketStatus {
+	new
+	open
+	pending_reminder
+	pending_close
+	closed
 }
