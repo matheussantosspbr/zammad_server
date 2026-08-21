@@ -19,11 +19,13 @@ model User {
   emailVerified Boolean
   image         String?
   status        UserStatus @default(PENDING)
+  discordUserId String?    @unique
   createdAt     DateTime
   updatedAt     DateTime
 
-  sessions Session[]
-  accounts Account[]
+  sessions          Session[]
+  accounts          Account[]
+  zammadIntegration ZammadIntegration?
 
   @@map("user")
 }
@@ -47,6 +49,7 @@ model Account {
   id                    String    @id
   accountId             String
   providerId            String
+  issuer                String
   userId                String
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   accessToken           String?
@@ -59,7 +62,23 @@ model Account {
   createdAt             DateTime
   updatedAt             DateTime
 
+  @@unique([issuer, accountId])
   @@map("account")
+}
+
+model ZammadIntegration {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ciphertext String
+  iv         String
+  tag        String
+  keyVersion Int
+  last4      String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("zammad_integration")
 }
 
 model Verification {

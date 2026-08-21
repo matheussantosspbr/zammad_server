@@ -1,6 +1,7 @@
 export interface HttpRequest {
 	params?: Record<string, string>
 	body?: unknown
+	userId?: string
 }
 
 export interface HttpResponse<T = unknown> {
