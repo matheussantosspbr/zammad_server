@@ -31,6 +31,19 @@ export class SendTicketMessageController implements Controller {
 			}
 		}
 
+		const nonImageAttachment = attachments.find(
+			(attachment) => !attachment.mimeType.startsWith("image/"),
+		)
+
+		if (nonImageAttachment) {
+			return {
+				statusCode: 400,
+				body: {
+					error: `Só é possível anexar imagens: "${nonImageAttachment.filename}" não é uma imagem`,
+				},
+			}
+		}
+
 		const messages = await this.sendTicketMessageUseCase.execute(
 			request.userId,
 			ticketId,
