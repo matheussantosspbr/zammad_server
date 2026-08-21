@@ -12,6 +12,20 @@ export const auth = betterAuth({
 	onAPIError: {
 		errorURL: `${env.CLIENT_URL}/?unauthorized=1`,
 	},
+	advanced: {
+		// Front (Vercel) e back (Render) são domínios diferentes de verdade em produção —
+		// sem isso, o navegador recusa persistir o cookie de state/sessão em requisições
+		// cross-site, e o login OAuth quebra com "State not persisted correctly".
+		defaultCookieAttributes: {
+			sameSite: "none",
+			secure: true,
+		},
+		ipAddress: {
+			// Render fica atrás de um proxy reverso; sem isso o rate limit não acha o IP
+			// real do cliente e cai num bucket compartilhado único por rota.
+			ipAddressHeaders: ["x-forwarded-for"],
+		},
+	},
 	database: prismaAdapter(prisma, { provider: "postgresql" }),
 	socialProviders: {
 		google: {
