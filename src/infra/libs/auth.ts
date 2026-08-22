@@ -5,6 +5,17 @@ import { syncOwnerTicketsQueue } from "../queues/sync-owner-tickets-queue.js"
 import { prisma } from "./prisma.js"
 import Zammad from "./zammad-client.js"
 
+const authURL = new URL(env.BETTER_AUTH_URL)
+const clientURL = new URL(env.CLIENT_URL)
+
+// Se o front e a API respondem no mesmo site (front servindo /api por proxy), o cookie
+// é de primeira parte e `lax` basta — inclusive no retorno do Google/Discord, que é uma
+// navegação top-level. Em sites diferentes o cookie vira de terceiro e exige
+// `none`+`secure`, que Firefox/Safari e Chrome com bloqueio de terceiros descartam:
+// é o que produz "State not persisted correctly" no callback.
+const isCrossSite = authURL.origin !== clientURL.origin
+const useSecureCookies = authURL.protocol === "https:"
+
 export const auth = betterAuth({
 	baseURL: env.BETTER_AUTH_URL,
 	secret: env.BETTER_AUTH_SECRET,
@@ -13,12 +24,9 @@ export const auth = betterAuth({
 		errorURL: `${env.CLIENT_URL}/?unauthorized=1`,
 	},
 	advanced: {
-		// Front (Vercel) e back (Render) são domínios diferentes de verdade em produção —
-		// sem isso, o navegador recusa persistir o cookie de state/sessão em requisições
-		// cross-site, e o login OAuth quebra com "State not persisted correctly".
 		defaultCookieAttributes: {
-			sameSite: "none",
-			secure: true,
+			sameSite: isCrossSite && useSecureCookies ? "none" : "lax",
+			secure: useSecureCookies,
 		},
 		ipAddress: {
 			// Render fica atrás de um proxy reverso; sem isso o rate limit não acha o IP
