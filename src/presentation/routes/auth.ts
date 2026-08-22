@@ -1,7 +1,6 @@
 import { fromNodeHeaders } from "better-auth/node"
 import type { FastifyInstance, FastifyPluginOptions } from "fastify"
-import { env } from "#env"
-import { auth } from "../../infra/libs/auth.js"
+import { auth, authBaseURL } from "../../infra/libs/auth.js"
 
 export default async function authRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	app.route({
@@ -11,7 +10,7 @@ export default async function authRoutes(app: FastifyInstance, _opts: FastifyPlu
 			// A URL precisa ser a origem pública do Better Auth, não o Host da requisição:
 			// atrás de um proxy (Vercel reescrevendo /api para cá) o Host que chega é o
 			// interno, e o que vale para cookies e redirects é o domínio que o navegador vê.
-			const url = new URL(request.url, env.BETTER_AUTH_URL)
+			const url = new URL(request.url, authBaseURL)
 			const headers = fromNodeHeaders(request.headers)
 			// O `auth.handler` recebe um Request web-standard, que não carrega socket —
 			// o IP do cliente só chega até o rate limit via header. Sobrescrever com o

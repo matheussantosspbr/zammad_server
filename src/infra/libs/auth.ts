@@ -6,18 +6,29 @@ import { prisma } from "./prisma.js"
 import Zammad from "./zammad-client.js"
 
 const authURL = new URL(env.BETTER_AUTH_URL)
+const clientURL = new URL(env.CLIENT_URL)
 
-// A API é servida na mesma origem que o front (o front reescreve `/api` para cá), então
-// o cookie é de primeira parte e `lax` basta — inclusive no retorno do Google/Discord,
-// que é navegação top-level e carrega cookies Lax. Nunca usar `none` aqui: exigiria
-// cookie de terceiro, que Chrome/Firefox/Safari bloqueiam — era o que produzia "State
-// not persisted correctly" quando o sign-in caía na origem do front (Vercel) e o callback
-// caía direto no Render. Mantenha `BETTER_AUTH_URL` como a origem pública que o navegador
-// vê (= CLIENT_URL), não o host interno do servidor.
-const useSecureCookies = authURL.protocol === "https:"
+// O navegador só enxerga o domínio público. Em dev, front e API têm o MESMO hostname
+// (localhost) — porta não muda o site — então a origem pública é `BETTER_AUTH_URL`.
+// Em prod, front (Vercel) e API (Render) são sites diferentes e a API chega ao navegador
+// através do proxy `/api` do front; a origem pública do fluxo vira `CLIENT_URL`. Redirecionar
+// o OAuth pro host interno do Render faria o callback cair num domínio onde o cookie de
+// state não existe — é o "State not persisted correctly" que você viu em produção.
+export const isCrossSite = authURL.hostname !== clientURL.hostname
+export const authBaseURL = isCrossSite ? env.CLIENT_URL : env.BETTER_AUTH_URL
+const useSecureCookies = new URL(authBaseURL).protocol === "https:"
+
+if (isCrossSite) {
+	console.warn(
+		`[auth] BETTER_AUTH_URL (${authURL.hostname}) e CLIENT_URL (${clientURL.hostname}) são sites diferentes. ` +
+			`O fluxo OAuth assume que o front faz proxy de /api para a API no próprio domínio. ` +
+			`Registre os redirect URIs do Google/Discord como ${env.CLIENT_URL}/api/auth/callback/{google,discord} ` +
+			`e aponte o NEXT_PUBLIC_API_URL do front para ${env.CLIENT_URL}.`,
+	)
+}
 
 export const auth = betterAuth({
-	baseURL: env.BETTER_AUTH_URL,
+	baseURL: authBaseURL,
 	secret: env.BETTER_AUTH_SECRET,
 	trustedOrigins: [env.CLIENT_URL],
 	onAPIError: {
@@ -25,6 +36,10 @@ export const auth = betterAuth({
 	},
 	advanced: {
 		defaultCookieAttributes: {
+			// A API é servida na mesma origem que o front (via proxy /api), então o cookie
+			// é de primeira parte e `lax` basta — inclusive no retorno do Google/Discord,
+			// que é navegação top-level e carrega cookies Lax. Nunca usar `none` aqui:
+			// exigiria cookie de terceiro, que Chrome/Firefox/Safari bloqueiam.
 			sameSite: "lax",
 			secure: useSecureCookies,
 		},
