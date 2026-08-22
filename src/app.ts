@@ -10,7 +10,15 @@ import errorHandler from "./presentation/middlewares/error-handler.js"
 import routes from "./presentation/routes/routes.js"
 
 export function buildApp(): FastifyInstance {
-	const app = Fastify().withTypeProvider<ZodTypeProvider>()
+	// Em produção a app fica atrás do proxy do Render; sem trustProxy o `request.ip`
+	// é o IP do proxy, e o rate limit do Better Auth vira um balde global por rota.
+	// `1` = confia só no hop mais próximo, então um `x-forwarded-for` forjado pelo
+	// cliente não consegue se passar por outro IP.
+	// Confia só no hop mais próximo (equivalente a `trustProxy: 1`, que os tipos do
+	// Fastify não aceitam): um `x-forwarded-for` forjado pelo cliente não passa.
+	const app = Fastify({ trustProxy: (_address, hop) => hop === 0 }).withTypeProvider<
+		ZodTypeProvider
+	>()
 
 	app.setValidatorCompiler(validatorCompiler)
 	app.setSerializerCompiler(serializerCompiler)

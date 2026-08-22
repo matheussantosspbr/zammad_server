@@ -9,6 +9,11 @@ export default async function authRoutes(app: FastifyInstance, _opts: FastifyPlu
 		async handler(request, reply) {
 			const url = new URL(request.url, `http://${request.headers.host}`)
 			const headers = fromNodeHeaders(request.headers)
+			// O `auth.handler` recebe um Request web-standard, que não carrega socket —
+			// o IP do cliente só chega até o rate limit via header. Sobrescrever com o
+			// `request.ip` já resolvido pelo Fastify cobre o dev (sem proxy) e impede
+			// que o valor original do cliente seja usado.
+			headers.set("x-forwarded-for", request.ip)
 			const req = new Request(url, {
 				method: request.method,
 				headers,
