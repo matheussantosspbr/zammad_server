@@ -6,14 +6,14 @@ import { prisma } from "./prisma.js"
 import Zammad from "./zammad-client.js"
 
 const authURL = new URL(env.BETTER_AUTH_URL)
-const clientURL = new URL(env.CLIENT_URL)
 
-// Se o front e a API respondem no mesmo site (front servindo /api por proxy), o cookie
-// é de primeira parte e `lax` basta — inclusive no retorno do Google/Discord, que é uma
-// navegação top-level. Em sites diferentes o cookie vira de terceiro e exige
-// `none`+`secure`, que Firefox/Safari e Chrome com bloqueio de terceiros descartam:
-// é o que produz "State not persisted correctly" no callback.
-const isCrossSite = authURL.origin !== clientURL.origin
+// A API é servida na mesma origem que o front (o front reescreve `/api` para cá), então
+// o cookie é de primeira parte e `lax` basta — inclusive no retorno do Google/Discord,
+// que é navegação top-level e carrega cookies Lax. Nunca usar `none` aqui: exigiria
+// cookie de terceiro, que Chrome/Firefox/Safari bloqueiam — era o que produzia "State
+// not persisted correctly" quando o sign-in caía na origem do front (Vercel) e o callback
+// caía direto no Render. Mantenha `BETTER_AUTH_URL` como a origem pública que o navegador
+// vê (= CLIENT_URL), não o host interno do servidor.
 const useSecureCookies = authURL.protocol === "https:"
 
 export const auth = betterAuth({
@@ -25,7 +25,7 @@ export const auth = betterAuth({
 	},
 	advanced: {
 		defaultCookieAttributes: {
-			sameSite: isCrossSite && useSecureCookies ? "none" : "lax",
+			sameSite: "lax",
 			secure: useSecureCookies,
 		},
 		ipAddress: {
