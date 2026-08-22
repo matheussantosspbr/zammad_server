@@ -25,6 +25,12 @@ export const auth = betterAuth({
 			// real do cliente e cai num bucket compartilhado único por rota.
 			ipAddressHeaders: ["x-forwarded-for"],
 		},
+		cookies: {
+			// O cookie de state nasce com Max-Age=300, mas o registro de verificação no
+			// banco vale 10min. Quem demora mais de 5min na tela do Google perdia o
+			// cookie e caía em "State not persisted correctly" — agora os dois expiram junto.
+			state: { attributes: { maxAge: 600 } },
+		},
 	},
 	database: prismaAdapter(prisma, { provider: "postgresql" }),
 	socialProviders: {
