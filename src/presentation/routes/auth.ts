@@ -22,6 +22,29 @@ export default async function authRoutes(app: FastifyInstance, _opts: FastifyPlu
 
 			const response = await auth.handler(req)
 
+			// Diagnóstico temporário do fluxo OAuth: o erro "State not persisted correctly"
+			// só diz que o cookie de state não voltou. Estes dois logs mostram em qual host
+			// ele foi gravado e em qual host ele era esperado — se forem diferentes, é aí
+			// que o login quebra. Remover quando o fluxo estiver estável.
+			if (url.pathname.includes("/sign-in/social") || url.pathname.includes("/callback/")) {
+				const cookieNames = (request.headers.cookie ?? "")
+					.split(";")
+					.map((part) => part.split("=")[0]?.trim())
+					.filter((name) => name?.includes("better-auth"))
+				console.log("[oauth-debug]", {
+					path: url.pathname,
+					host: request.headers.host,
+					protocol: request.protocol,
+					origin: request.headers.origin ?? null,
+					referer: request.headers.referer ?? null,
+					cookiesRecebidos: cookieNames,
+					cookiesGravados: response.headers
+						.getSetCookie()
+						.map((cookie) => cookie.split("=")[0]),
+					status: response.status,
+				})
+			}
+
 			reply.status(response.status)
 			response.headers.forEach((value, key) => {
 				reply.header(key, value)
